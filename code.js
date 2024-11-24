@@ -12,6 +12,7 @@ figma.showUI(__html__, { width: 240, height: 160 });
 // Track node deletion count and limit concurrent animations
 let deletionCount = 0;
 const MAX_CONCURRENT_EXPLOSIONS = 3;
+const STAGGER_DELAY = 75;
 const explosionQueue = [];
 // Initialize plugin
 function initializePlugin() {
@@ -59,21 +60,30 @@ function initializePlugin() {
 }
 // Queue manager for explosions
 function queueExplosion(explosionFn) {
+    const timestamp = Date.now();
     if (deletionCount < MAX_CONCURRENT_EXPLOSIONS) {
         deletionCount++;
-        explosionFn();
+        // Add stagger delay based on current deletion count
         setTimeout(() => {
-            deletionCount--;
-            // Process next explosion in queue if available
-            if (explosionQueue.length > 0) {
-                const nextExplosion = explosionQueue.shift();
-                if (nextExplosion)
-                    queueExplosion(nextExplosion);
-            }
-        }, 800);
+            explosionFn();
+            // Schedule queue processing after animation
+            setTimeout(() => {
+                deletionCount--;
+                processQueue();
+            }, 800); // Match animation duration
+        }, deletionCount * STAGGER_DELAY);
     }
     else {
-        explosionQueue.push(explosionFn);
+        explosionQueue.push({ createExplosion: explosionFn, timestamp });
+    }
+}
+// Process queued explosions
+function processQueue() {
+    if (explosionQueue.length > 0 && deletionCount < MAX_CONCURRENT_EXPLOSIONS) {
+        const nextExplosion = explosionQueue.shift();
+        if (nextExplosion) {
+            queueExplosion(nextExplosion.createExplosion);
+        }
     }
 }
 // Start the plugin
@@ -104,9 +114,9 @@ function calculateExplosionParameters(bounds) {
     // Smooth curve for animation duration
     const animationDuration = Math.floor(400 + 400 * (1 - Math.exp(-baseScaleFactor)));
     // Distance scaling
-    const distanceScale = nodeSize * lerp(1.5, 0.75, baseScaleFactor);
+    const distanceScale = nodeSize / Math.min(1, lerp(0.3, 1, zoom)) / 2;
     /* Some logging
-    cxonsole.log(
+    console.log(
       `Node size: ${nodeSize.toFixed(2)}px, ` +
         `Base scale: ${baseScaleFactor.toFixed(2)}, ` +
         `Particle size: ${particleSize.toFixed(2)}px, ` +
@@ -144,8 +154,7 @@ function createExplosionEffect(bounds) {
     explosionGroup.fills = [];
     explosionGroup.clipsContent = false;
     explosionGroup.layoutMode = "NONE";
-    // Size the explosion group according to zoom level
-    const explosionSize = maxDistance * 2;
+    const explosionSize = Math.max(1, maxDistance * 2); // Ensure minimum size of 1 to avoid errors
     explosionGroup.resize(explosionSize, explosionSize);
     explosionGroup.x = centerX - explosionSize / 2;
     explosionGroup.y = centerY - explosionSize / 2;
@@ -176,7 +185,9 @@ function createExplosionEffect(bounds) {
             },
         ];
         const angle = Math.random() * Math.PI * 2;
-        const distance = Math.random() * maxDistance;
+        const minDistanceFactor = 0.85;
+        const distance = (minDistanceFactor + (1 - minDistanceFactor) * Math.random()) *
+            maxDistance;
         const targetX = particleStartX + Math.cos(angle) * distance;
         const targetY = particleStartY + Math.sin(angle) * distance;
         const animationPromise = (() => __awaiter(this, void 0, void 0, function* () {
@@ -218,7 +229,6 @@ function createExplosionEffect(bounds) {
         }
     });
 }
-// Utility functions remain unchanged
 function hexToRGB(hex) {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
     const g = parseInt(hex.slice(3, 5), 16) / 255;
