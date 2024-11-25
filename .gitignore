@@ -1,5 +1,6 @@
 .vscode
 .DS_Store
+code.js
 *.log
 *.css.d.ts
 build/
